@@ -130,6 +130,8 @@ export function notify(note) {
     // `quiet`: small news (level-ups, items, quests) that clients list but don't pop up.
     id: Number(/(\d+)\.png$/.exec(icon ?? "")?.[1]) || null, encounter: !!note.action, quiet: !!note.quiet,
     icon, action: note.action ?? null, timeout: note.timeout ?? null, origin: caller.origin, session: caller.session,
+    // Local fix: a jingle for the app to play, where this server can't (see playSound).
+    ...(note.sound ? { sound: note.sound } : {}),
   };
   writeJson(NOTES_FILE, [...notes().filter((n) => Date.now() - n.at < 86400000), entry].slice(-30));
   return "note";
@@ -139,7 +141,9 @@ export function notify(note) {
 const SOUNDS = new Set(["evolve.mp3", "badge.mp3"]);
 export function playSound(file) {
   const name = path.basename(String(file ?? ""));
-  if (!SOUNDS.has(name) || process.platform !== "darwin" || !settings().sounds.enabled) return null;
+  if (!SOUNDS.has(name) || !settings().sounds.enabled) return null;
+  // Local fix: afplay is macOS only. Elsewhere the app that caused it plays it (a quiet note).
+  if (process.platform !== "darwin") { notify({ title: "", quiet: true, sound: name }); return null; }
   try {
     Bun.spawn(["afplay", path.join(ROOT, "assets", "sounds", name)], { stdout: "ignore", stderr: "ignore", stdin: "ignore" }).unref();
   } catch {}

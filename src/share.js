@@ -255,7 +255,26 @@ export function renderCard(g, caught, partners, sprites) {
 
 // Puts a PNG file on the macOS clipboard. Elsewhere (or when it fails) the card stays a file.
 export async function copyImage(file) {
-  if (process.platform !== "darwin" || process.env.POKEDEX_NO_CLIPBOARD) return false;
+  if (process.env.POKEDEX_NO_CLIPBOARD) return false;
+  // Local fix: Linux. WSL puts it on the Windows clipboard; else wl-copy (Wayland) or xclip (X11).
+  if (process.platform === "linux") {
+    const run = async (argv, input) => {
+      try {
+        const proc = Bun.spawn(argv, { stdin: input ? Bun.file(input) : "ignore", stdout: "pipe", stderr: "ignore" });
+        const out = await new Response(proc.stdout).text();
+        return (await proc.exited) === 0 ? out : null;
+      } catch { return null; }
+    };
+    const win = (await run(["wslpath", "-w", file]))?.trim();
+    if (win) {
+      const ps = `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $i = [System.Drawing.Image]::FromFile('${win.replace(/'/g, "''")}'); [System.Windows.Forms.Clipboard]::SetImage($i); $i.Dispose()`;
+      if ((await run(["powershell.exe", "-NoProfile", "-STA", "-Command", ps])) !== null) return true;
+    }
+    if (process.env.WAYLAND_DISPLAY && (await run(["wl-copy", "--type", "image/png"], file)) !== null) return true;
+    if (process.env.DISPLAY && (await run(["xclip", "-selection", "clipboard", "-t", "image/png", "-i", file])) !== null) return true;
+    return false;
+  }
+  if (process.platform !== "darwin") return false;
   const proc = Bun.spawn(["osascript", "-e", `set the clipboard to (read (POSIX file ${JSON.stringify(file)}) as «class PNGf»)`], { stdout: "ignore", stderr: "pipe" });
   return (await proc.exited) === 0;
 }
